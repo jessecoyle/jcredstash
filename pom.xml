@@ -23,9 +23,9 @@
     </licenses>
 
     <scm>
-        <connection>scm:git:git@github.com:jessecoyle/jcredstash.git</connection>
-        <url>scm:git:git@github.com:jessecoyle/jcredstash.git</url>
-        <developerConnection>scm:git:git@github.com:jessecoyle/jcredstash.git</developerConnection>
+        <connection>scm:https://github.com/jessecoyle/jcredstash.git</connection>
+        <url>scm:https://github.com/jessecoyle/jcredstash.git</url>
+        <developerConnection>scm:https://github.com/jessecoyle/jcredstash.git</developerConnection>
     </scm>
 
     <properties>
