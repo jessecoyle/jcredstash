@@ -8,6 +8,26 @@
     <artifactId>jcredstash</artifactId>
     <version>1.0-SNAPSHOT</version>
 
+    <packaging>jar</packaging>
+
+    <name>JCredStash</name>
+    <description>A pure Java implementation of the CredStash utility originally in Python</description>
+    <url>https://github.com/jessecoyle/jcredstash</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:git@github.com:jessecoyle/jcredstash.git</connection>
+        <url>scm:git:git@github.com:jessecoyle/jcredstash.git</url>
+        <developerConnection>scm:git:git@github.com:jessecoyle/jcredstash.git</developerConnection>
+    </scm>
+
     <properties>
         <aws.version>1.10.47</aws.version>
     </properties>
@@ -52,6 +72,11 @@
                     <target>1.8</target>
                 </configuration>
                 <version>3.3</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-release-plugin</artifactId>
+                <version>2.5.3</version>
             </plugin>
         </plugins>
     </build>
