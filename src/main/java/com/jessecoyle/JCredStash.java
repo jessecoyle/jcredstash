@@ -56,10 +56,9 @@ public class JCredStash {
         }
     }
 
-    protected StoredSecret readDynamoItem(String secret) {
-        // TODO: allow customization of table name
+    protected StoredSecret readDynamoItem(String tableName, String secret) {
         // TODO: allow multiple secrets to be fetched by pattern or list
-        QueryResult queryResult = amazonDynamoDBClient.query(new QueryRequest("credential-store")
+        QueryResult queryResult = amazonDynamoDBClient.query(new QueryRequest(tableName)
                 .withLimit(1)
                 .withScanIndexForward(false)
                 .withConsistentRead(true)
@@ -83,13 +82,14 @@ public class JCredStash {
         return decryptResult.getPlaintext();
     }
 
-    public String getSecret(String secret, Map<String, String> context)  {
+    // default table name: "credential-store"
+    public String getSecret(String tableName, String secret, Map<String, String> context)  {
 
         // The secret was encrypted using AES, then the key for that encryption was encrypted with AWS KMS
         // Then both the encrypted secret and the encrypted key are stored in dynamo
 
         // First find the relevant rows from the credstash table
-        StoredSecret encrypted = readDynamoItem(secret);
+        StoredSecret encrypted = readDynamoItem(tableName, secret);
 
         // First obtain that original key again using KMS
         ByteBuffer plainText = decryptKeyWithKMS(encrypted.getKey(), context);
