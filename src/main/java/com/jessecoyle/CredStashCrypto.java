@@ -15,4 +15,6 @@ public interface CredStashCrypto {
     byte[] INITIALIZATION_VECTOR = new byte[]{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
 
     byte[] decrypt(byte[] key, byte[] contents);
+
+    byte[] digest(byte[] keyBytes, byte[] contents);
 }

@@ -6,10 +6,12 @@ import com.amazonaws.services.dynamodbv2.model.*;
 import com.amazonaws.services.kms.AWSKMSClient;
 import com.amazonaws.services.kms.model.DecryptRequest;
 import com.amazonaws.services.kms.model.DecryptResult;
+import org.apache.commons.codec.DecoderException;
+import org.apache.commons.codec.binary.Hex;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -38,26 +40,49 @@ public class JCredStash {
         this.cryptoImpl = new CredStashBouncyCastleCrypto();
     }
 
+    /**
+     * Represents a row in a credstash table. The encrypted key and encrypted contents are both stored base64 encoded.
+     * The hmac digest is stored hex encoded.
+     */
     protected static class StoredSecret {
-        protected String key;
-        protected String contents;
+        protected byte[] key;
+        protected byte[] contents;
+        protected byte[] hmac;
 
-        public StoredSecret(String key, String contents) {
-            this.key = key;
-            this.contents = contents;
+        protected static byte[] base64AttributeValueToBytes(AttributeValue value) {
+            return Base64.getDecoder().decode(value.getS());
         }
 
-        public String getKey() {
+        protected static byte[] hexAttributeValueToBytes(AttributeValue value) {
+            try {
+                return Hex.decodeHex(value.getS().toCharArray());
+            } catch (DecoderException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        public StoredSecret(Map<String, AttributeValue> item) {
+            this.key = base64AttributeValueToBytes(item.get("key"));
+            this.contents = base64AttributeValueToBytes(item.get("contents"));
+            this.hmac = hexAttributeValueToBytes(item.get("hmac"));
+        }
+
+        public byte[] getKey() {
             return key;
         }
 
-        public String getContents() {
+        public byte[] getContents() {
             return contents;
+        }
+
+        public byte[] getHmac() {
+            return hmac;
         }
     }
 
     protected StoredSecret readDynamoItem(String tableName, String secret) {
         // TODO: allow multiple secrets to be fetched by pattern or list
+        // TODO: allow specific version to be fetched
         QueryResult queryResult = amazonDynamoDBClient.query(new QueryRequest(tableName)
                 .withLimit(1)
                 .withScanIndexForward(false)
@@ -71,11 +96,11 @@ public class JCredStash {
         }
         Map<String, AttributeValue> item = queryResult.getItems().get(0);
 
-        return new StoredSecret(item.get("key").getS(), item.get("contents").getS());
+        return new StoredSecret(item);
     }
 
-    protected ByteBuffer decryptKeyWithKMS(String encryptedKey, Map<String, String> context) {
-        ByteBuffer blob = ByteBuffer.wrap(Base64.getDecoder().decode(encryptedKey));
+    protected ByteBuffer decryptKeyWithKMS(byte[] encryptedKeyBytes, Map<String, String> context) {
+        ByteBuffer blob = ByteBuffer.wrap(encryptedKeyBytes);
 
         DecryptResult decryptResult = awskmsClient.decrypt(new DecryptRequest().withCiphertextBlob(blob).withEncryptionContext(context));
 
@@ -98,11 +123,15 @@ public class JCredStash {
         byte[] keyBytes = new byte[32];
         plainText.get(keyBytes);
 
-        //TODO check HMAC
+        byte[] hmacKeyBytes = new byte[plainText.remaining()];
+        plainText.get(hmacKeyBytes);
+        byte[] digest = cryptoImpl.digest(hmacKeyBytes, encrypted.getContents());
+        if(!Arrays.equals(digest, encrypted.getHmac())) {
+            throw new RuntimeException("HMAC integrety check failed"); //TODO custom exception type
+        }
 
         // now use AES to finally decrypt the actual secret
-        byte[] contentBytes = Base64.getDecoder().decode(encrypted.getContents());
-        byte[] decryptedBytes = cryptoImpl.decrypt(keyBytes, contentBytes);
+        byte[] decryptedBytes = cryptoImpl.decrypt(keyBytes, encrypted.getContents());
         return new String(decryptedBytes);
     }
 }

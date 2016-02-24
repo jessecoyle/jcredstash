@@ -1,9 +1,6 @@
 package com.jessecoyle;
 
-import javax.crypto.BadPaddingException;
-import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
+import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.security.InvalidAlgorithmParameterException;
@@ -15,8 +12,10 @@ import java.security.NoSuchAlgorithmException;
  */
 public class CredStashJavaxCrypto implements CredStashCrypto {
     protected final String CIPHER_TRANSFORMATION = "AES/CTR/NoPadding";
+    protected final String MAC_SERVICE = "HmacSHA256";
     protected Cipher cipher;
     protected IvParameterSpec ivParameterSpec;
+    protected Mac mac;
 
     public CredStashJavaxCrypto() {
         try {
@@ -24,11 +23,11 @@ public class CredStashJavaxCrypto implements CredStashCrypto {
             if(maxAllowedKeyLength < 256) {
                 throw new RuntimeException("Maximum key length " + maxAllowedKeyLength + " too low, likely Java Cryptography Extension (JCE) Unlimited Strength Jurisdiction Policy Files not installed");
             }
-            String transformation = "AES/CTR/NoPadding";
             cipher = Cipher.getInstance(CIPHER_TRANSFORMATION);
             ivParameterSpec = new IvParameterSpec(INITIALIZATION_VECTOR);
+            mac = Mac.getInstance(MAC_SERVICE);
         } catch(NoSuchAlgorithmException | NoSuchPaddingException e) {
-            throw new RuntimeException("Error initializing javax.crypto for " + CIPHER_TRANSFORMATION, e);
+            throw new RuntimeException("Error initializing javax.crypto", e);
         }
     }
 
@@ -47,6 +46,17 @@ public class CredStashJavaxCrypto implements CredStashCrypto {
             return cipher.doFinal(contents);
         } catch (InvalidKeyException | InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
             throw new RuntimeException("Error executing javax.crypto", e);
+        }
+    }
+
+    @Override
+    public byte[] digest(byte[] keyBytes, byte[] contents) {
+        SecretKeySpec hmac = new SecretKeySpec(keyBytes, "HmacSHA256");
+        try {
+            mac.init(hmac);
+            return mac.doFinal(contents);
+        } catch (InvalidKeyException e) {
+            throw new RuntimeException("Error verifying javax.crypto", e);
         }
     }
 }

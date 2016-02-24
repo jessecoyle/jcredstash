@@ -30,8 +30,8 @@ public class JavaxCryptoTest extends CredStashCryptoTest {
         }
     };
 
-    public JavaxCryptoTest(String key, String decrypted, String encrypted) {
-        super(key, decrypted, encrypted);
+    public JavaxCryptoTest(String name, String key, String digestKey, String decrypted, String encrypted, String digest) {
+        super(name, key, digestKey, decrypted, encrypted, digest);
     }
 
     @Override
