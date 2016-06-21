@@ -15,10 +15,6 @@ import org.mockito.internal.verification.VerificationModeFactory;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 public class JCredStashTest {
 
     private AmazonDynamoDBClient dynamoDBClient;
@@ -27,21 +23,21 @@ public class JCredStashTest {
     @Before
     public void setUp()
     {
-        dynamoDBClient = mock(AmazonDynamoDBClient.class);
+        dynamoDBClient = Mockito.mock(AmazonDynamoDBClient.class);
 
         GenerateDataKeyResult generateDatakeyResult = new GenerateDataKeyResult();
-        generateDatakeyResult.setCiphertextBlob(mock(ByteBuffer.class));
-        generateDatakeyResult.setPlaintext(mock(ByteBuffer.class));
+        generateDatakeyResult.setCiphertextBlob(Mockito.mock(ByteBuffer.class));
+        generateDatakeyResult.setPlaintext(Mockito.mock(ByteBuffer.class));
 
-        awskmsClient = mock(AWSKMSClient.class);
-        when(awskmsClient.generateDataKey(Mockito.any(GenerateDataKeyRequest.class))).thenReturn(generateDatakeyResult);
+        awskmsClient = Mockito.mock(AWSKMSClient.class);
+        Mockito.when(awskmsClient.generateDataKey(Mockito.any(GenerateDataKeyRequest.class))).thenReturn(generateDatakeyResult);
     }
 
     @Test
     public void testPutSecretDefaultVersion()
     {
         final PutItemRequest[] putItemRequest = new PutItemRequest[1];
-        when(dynamoDBClient.putItem(Mockito.any(PutItemRequest.class))).thenAnswer(invocationOnMock -> {
+        Mockito.when(dynamoDBClient.putItem(Mockito.any(PutItemRequest.class))).thenAnswer(invocationOnMock -> {
             Object[] args = invocationOnMock.getArguments();
             putItemRequest[0] = (PutItemRequest) args[0];
             return new PutItemResult();
@@ -50,7 +46,7 @@ public class JCredStashTest {
         JCredStash credStash = new JCredStash(dynamoDBClient, awskmsClient);
         credStash.putSecret("table", "mysecret", "foo", "alias/foo", new HashMap<>(), null);
 
-        verify(dynamoDBClient, VerificationModeFactory.times(1)).putItem(Mockito.any(PutItemRequest.class));
+        Mockito.verify(dynamoDBClient, VerificationModeFactory.times(1)).putItem(Mockito.any(PutItemRequest.class));
         Assert.assertEquals(putItemRequest[0].getItem().get("version").getS(), padVersion(1));
     }
 
@@ -59,7 +55,7 @@ public class JCredStashTest {
     {
         String version = "foover";
         final PutItemRequest[] putItemRequest = new PutItemRequest[1];
-        when(dynamoDBClient.putItem(Mockito.any(PutItemRequest.class))).thenAnswer(invocationOnMock -> {
+        Mockito.when(dynamoDBClient.putItem(Mockito.any(PutItemRequest.class))).thenAnswer(invocationOnMock -> {
             Object[] args = invocationOnMock.getArguments();
             putItemRequest[0] = (PutItemRequest) args[0];
             return new PutItemResult();
@@ -68,7 +64,7 @@ public class JCredStashTest {
         JCredStash credStash = new JCredStash(dynamoDBClient, awskmsClient);
         credStash.putSecret("table", "mysecret", "foo", "alias/foo", new HashMap<>(), version);
 
-        verify(dynamoDBClient, VerificationModeFactory.times(1)).putItem(Mockito.any(PutItemRequest.class));
+        Mockito.verify(dynamoDBClient, VerificationModeFactory.times(1)).putItem(Mockito.any(PutItemRequest.class));
         Assert.assertEquals(putItemRequest[0].getItem().get("version").getS(), version);
     }
 
@@ -76,7 +72,7 @@ public class JCredStashTest {
     public void testPutSecretAutoIncrementVersion()
     {
         final PutItemRequest[] putItemRequest = new PutItemRequest[1];
-        when(dynamoDBClient.putItem(Mockito.any(PutItemRequest.class))).thenAnswer(invocationOnMock -> {
+        Mockito.when(dynamoDBClient.putItem(Mockito.any(PutItemRequest.class))).thenAnswer(invocationOnMock -> {
             Object[] args = invocationOnMock.getArguments();
             putItemRequest[0] = (PutItemRequest) args[0];
             return new PutItemResult();
@@ -86,7 +82,7 @@ public class JCredStashTest {
         Mockito.doReturn(padVersion(1)).when(credStash).getHighestVersion("table", "mysecret");
         credStash.putSecret("table", "mysecret", "foo", "alias/foo", new HashMap<>());
 
-        verify(dynamoDBClient, VerificationModeFactory.times(1)).putItem(Mockito.any(PutItemRequest.class));
+        Mockito.verify(dynamoDBClient, VerificationModeFactory.times(1)).putItem(Mockito.any(PutItemRequest.class));
         Assert.assertEquals(putItemRequest[0].getItem().get("version").getS(), padVersion(2));
     }
 
