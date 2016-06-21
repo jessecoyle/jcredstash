@@ -32,6 +32,14 @@ public class CredStashJavaxCrypto implements CredStashCrypto {
     }
 
     public byte[] decrypt(byte[] key, byte[] contents) {
+        return encryptOrDecrypt(key, contents, false);
+    }
+
+    public byte[] encrypt(byte[] key, byte[] contents) {
+        return encryptOrDecrypt(key, contents, true);
+    }
+
+    private byte[] encryptOrDecrypt(byte[] key, byte[] contents, boolean forEncryption) {
         SecretKeySpec aes = new SecretKeySpec(key, "AES");
 
         try {
@@ -41,7 +49,7 @@ public class CredStashJavaxCrypto implements CredStashCrypto {
             // to prevent attackers from finding identically encrypted blocks and deducing the blocks to be identical
             // when unencrypted. In this case it's safe to reuse initial values because a new key is chosen for
             // every encrypted secret.
-            cipher.init(Cipher.DECRYPT_MODE, aes, ivParameterSpec);
+            cipher.init(forEncryption ? Cipher.ENCRYPT_MODE : Cipher.DECRYPT_MODE, aes, ivParameterSpec);
 
             return cipher.doFinal(contents);
         } catch (InvalidKeyException | InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {

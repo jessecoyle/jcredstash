@@ -16,13 +16,22 @@ public class CredStashBouncyCastleCrypto implements CredStashCrypto {
     @Override
     public byte[] decrypt(byte[] key, byte[] contents) {
 
+        return encryptOrDecrypt(key, contents, false);
+    }
+
+    @Override
+    public byte[] encrypt(byte[] key, byte[] contents) {
+        return encryptOrDecrypt(key, contents, true);
+    }
+
+    private byte[] encryptOrDecrypt(byte[] key, byte[] contents, boolean forEncryption) {
+
         // Credstash uses standard AES
         BlockCipher engine = new AESFastEngine();
 
         // Credstash uses CTR mode
         StreamBlockCipher cipher = new SICBlockCipher(engine);
 
-        boolean forEncryption = false;
         cipher.init(forEncryption, new ParametersWithIV(new KeyParameter(key), INITIALIZATION_VECTOR));
 
         byte[] resultBytes = new byte[contents.length];
