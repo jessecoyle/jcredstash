@@ -58,6 +58,19 @@ public abstract class CredStashCryptoTest {
     }
 
     @Test
+    public void testEncrypt() throws Exception {
+        byte[] keyBytes = javax.xml.bind.DatatypeConverter.parseHexBinary(key);
+        byte[] decryptedBytes = javax.xml.bind.DatatypeConverter.parseBase64Binary(decrypted);
+        byte[] encryptedbytes = javax.xml.bind.DatatypeConverter.parseBase64Binary(encrypted);
+
+        CredStashCrypto crypto = getCryptoImplementation();
+
+        byte[] actualEncrypted = crypto.encrypt(keyBytes, decryptedBytes);
+
+        assertThat("Encrypted: " + javax.xml.bind.DatatypeConverter.printBase64Binary(actualEncrypted), actualEncrypted, equalTo(encryptedbytes));
+    }
+
+    @Test
     public void testDigest() throws Exception {
         byte[] decryptedBytes = javax.xml.bind.DatatypeConverter.parseBase64Binary(decrypted);
         byte[] digestKeyBytes = javax.xml.bind.DatatypeConverter.parseHexBinary(digestKey);
