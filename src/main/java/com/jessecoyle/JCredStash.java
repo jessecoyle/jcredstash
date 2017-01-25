@@ -2,12 +2,7 @@ package com.jessecoyle;
 
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
-import com.amazonaws.services.dynamodbv2.model.AttributeValue;
-import com.amazonaws.services.dynamodbv2.model.ComparisonOperator;
-import com.amazonaws.services.dynamodbv2.model.Condition;
-import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
-import com.amazonaws.services.dynamodbv2.model.QueryRequest;
-import com.amazonaws.services.dynamodbv2.model.QueryResult;
+import com.amazonaws.services.dynamodbv2.model.*;
 import com.amazonaws.services.kms.AWSKMSClient;
 import com.amazonaws.services.kms.model.DecryptRequest;
 import com.amazonaws.services.kms.model.DecryptResult;
@@ -17,10 +12,7 @@ import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Created by jcoyle on 2/1/16.
@@ -53,10 +45,7 @@ public class JCredStash {
      * The hmac digest is stored hex encoded.
      */
     protected static class StoredSecret {
-        protected byte[] key;
-        protected byte[] contents;
-        protected byte[] hmac;
-        protected String version;
+        protected Map<String, AttributeValue> item;
 
         protected static byte[] base64AttributeValueToBytes(AttributeValue value) {
             return Base64.getDecoder().decode(value.getS());
@@ -71,39 +60,76 @@ public class JCredStash {
         }
 
         public StoredSecret(Map<String, AttributeValue> item) {
-            this.key = base64AttributeValueToBytes(item.get("key"));
-            this.contents = base64AttributeValueToBytes(item.get("contents"));
-            this.hmac = hexAttributeValueToBytes(item.get("hmac"));
-            this.version = item.get("version").getS();
+            this.item = item;
         }
 
         public byte[] getKey() {
-            return key;
+            return base64AttributeValueToBytes(item.get("key"));
         }
 
         public byte[] getContents() {
-            return contents;
+            return base64AttributeValueToBytes(item.get("contents"));
         }
 
         public byte[] getHmac() {
-            return hmac;
+            return hexAttributeValueToBytes(item.get("hmac"));
         }
 
         public String getVersion() {
-            return version;
+            return item.get("version").getS();
+        }
+
+        public String getName() {
+            return item.get("name").getS();
         }
     }
 
-    protected StoredSecret readDynamoItem(String tableName, String secretName) {
-        // TODO: allow multiple secrets to be fetched by pattern or list
-        // TODO: allow specific version to be fetched
-        QueryResult queryResult = amazonDynamoDBClient.query(new QueryRequest(tableName)
+    protected QueryRequest basicQueryRequest(String tableName, String secretName) {
+        return new QueryRequest(tableName)
                 .withLimit(1)
                 .withScanIndexForward(false)
                 .withConsistentRead(true)
                 .addKeyConditionsEntry("name", new Condition()
                         .withComparisonOperator(ComparisonOperator.EQ)
-                        .withAttributeValueList(new AttributeValue(secretName)))
+                        .withAttributeValueList(new AttributeValue(secretName)));
+    }
+
+    /**
+     * Get the highest version of a secret.
+     *
+     * @param tableName Credstash DynamoDB table name
+     * @param secretName Credstash secret name
+     * @return The highest version of the secret or null if no secret with that name exists
+     */
+    public String getHighestVersion(String tableName, String secretName) {
+        QueryResult queryResult = amazonDynamoDBClient.query(
+                basicQueryRequest(tableName, secretName)
+                .withProjectionExpression("version")
+        );
+        if(queryResult.getCount() == 0) {
+            return null;
+        }
+        Map<String, AttributeValue> item = queryResult.getItems().get(0);
+
+        return new StoredSecret(item).getVersion();
+    }
+
+    protected StoredSecret readVersionedDynamoItem(String tableName, String secretName, String version) {
+        HashMap<String, AttributeValue> key = new HashMap<>();
+        key.put("name", new AttributeValue(secretName));
+        key.put("version", new AttributeValue(version));
+        GetItemResult getItemResult = amazonDynamoDBClient.getItem(new GetItemRequest(tableName, key, true));
+        if(getItemResult == null) {
+            return null;
+        }
+        Map<String, AttributeValue> item = getItemResult.getItem();
+
+        return new StoredSecret(item);
+    }
+
+    protected StoredSecret readHighestVersionDynamoItem(String tableName, String secretName) {
+        QueryResult queryResult = amazonDynamoDBClient.query(
+                basicQueryRequest(tableName, secretName)
         );
         if(queryResult.getCount() == 0) {
             return null;
@@ -111,6 +137,94 @@ public class JCredStash {
         Map<String, AttributeValue> item = queryResult.getItems().get(0);
 
         return new StoredSecret(item);
+    }
+
+    /**
+     * Iterator containing the complexity of paging through a scan. This allows calling code to be responsive
+     * as paged results are retrieved.
+     */
+    protected class ListItemIterator implements Iterator<StoredSecret> {
+        protected final ScanRequest scanRequest;
+        protected ScanResult scanResult = null;
+        protected Iterator<Map<String, AttributeValue>> scanIterator = null;
+
+        public ListItemIterator(String tableName, String secretPrefix) {
+            this.scanRequest = new ScanRequest(tableName)
+                    .withProjectionExpression("#N, version");
+
+            this.scanRequest.addExpressionAttributeNamesEntry("#N", "name");
+
+            if(secretPrefix != null) {
+                this.scanRequest.addExpressionAttributeValuesEntry(":secretPrefix", new AttributeValue(secretPrefix));
+                this.scanRequest.setFilterExpression("begins_with(#N, :secretPrefix)");
+            }
+
+            nextPage();
+        }
+
+        protected void nextPage() {
+            ScanRequest request = this.scanRequest.withExclusiveStartKey(scanResult == null ? null : scanResult.getLastEvaluatedKey());
+            scanResult = amazonDynamoDBClient.scan(request);
+            if(scanResult.getCount() == 0) {
+                scanResult = null;
+                scanIterator = null;
+            } else {
+                scanIterator = scanResult.getItems().iterator();
+            }
+        }
+
+        @Override
+        public boolean hasNext() {
+            if(scanIterator == null) {
+                return false;
+            }
+            if(scanIterator.hasNext()) {
+                return true;
+            }
+            if(scanResult == null || scanResult.getLastEvaluatedKey() == null) {
+                return false;
+            }
+            nextPage();
+            return hasNext();
+        }
+
+        @Override
+        public StoredSecret next() {
+            if(!hasNext()) {
+                throw new NoSuchElementException();
+            }
+            return new StoredSecret(scanIterator.next());
+        }
+    }
+
+    protected Iterator<StoredSecret> listDynamoItem(String tableName, String secretPrefix) {
+        return new ListItemIterator(tableName, secretPrefix);
+    }
+
+    /**
+     * Retrieve a set of secrets all at once. Most useful if secrets are named with paths for grouping
+     * @param tableName the dynamo table name (likely "credential-store")
+     * @param secretPrefix the prefix for all secrets to get
+     * @param context encryption context key/value pairs associated with the credential in the form of "key=value"
+     * @return Map of all secrets found
+     */
+    public Map<String, String> getAllSecrets(String tableName, String secretPrefix, Map<String, String> context) {
+        Iterator<StoredSecret> iter = listDynamoItem(tableName, secretPrefix);
+        Map<String, String> latestVersions = new HashMap<>();
+        while(iter.hasNext()) {
+            StoredSecret next = iter.next();
+            String name = next.getName();
+            String version = next.getVersion();
+            if(!latestVersions.containsKey(name) || latestVersions.get(name).compareTo(version) < 0) {
+                latestVersions.put(name, version);
+            }
+        }
+        Map<String, String> results = new HashMap<>();
+        for(Map.Entry<String, String> entry : latestVersions.entrySet()) {
+            String secret = getSecret(tableName, entry.getKey(), context, entry.getValue());
+            results.put(entry.getKey(), secret);
+        }
+        return results;
     }
 
     protected ByteBuffer decryptKeyWithKMS(byte[] encryptedKeyBytes, Map<String, String> context) {
@@ -121,17 +235,40 @@ public class JCredStash {
         return decryptResult.getPlaintext();
     }
 
-    // default table name: "credential-store"
+    /**
+     * Gets a secret from credstash.
+     *
+     * @param tableName the dynamo table name (likely "credential-store")
+     * @param secretName the name of the secret to get
+     * @param context encryption context key/value pairs associated with the credential in the form of "key=value"
+     * @return unencrypted secret
+     */
     public String getSecret(String tableName, String secretName, Map<String, String> context)  {
+        return getSecret(tableName, secretName, context, null);
+    }
 
-        // The secret was encrypted using AES, then the key for that encryption was encrypted with AWS KMS
-        // Then both the encrypted secret and the encrypted key are stored in dynamo
-
+    /**
+     * Gets a secret from credstash with a specified version
+     *
+     * @param tableName the dynamo table name (likely "credential-store")
+     * @param secretName the name of the secret to get
+     * @param context encryption context key/value pairs associated with the credential in the form of "key=value"
+     * @param version a particular version string to lookup (null for latest version)
+     * @return unencrypted secret
+     */
+    public String getSecret(String tableName, String secretName, Map<String, String> context, String version)  {
         // First find the relevant rows from the credstash table
-        StoredSecret encrypted = readDynamoItem(tableName, secretName);
+        StoredSecret encrypted = version == null ? readHighestVersionDynamoItem(tableName, secretName) : readVersionedDynamoItem(tableName, secretName, version);
         if(encrypted == null) {
             throw new RuntimeException("Secret " + secretName + " could not be found");
         }
+        return getSecret(encrypted, context);
+    }
+
+    protected String getSecret(StoredSecret encrypted, Map<String, String> context)  {
+
+        // The secret was encrypted using AES, then the key for that encryption was encrypted with AWS KMS
+        // Then both the encrypted secret and the encrypted key are stored in dynamo
 
         // First obtain that original key again using KMS
         ByteBuffer plainText = decryptKeyWithKMS(encrypted.getKey(), context);
@@ -142,13 +279,14 @@ public class JCredStash {
 
         byte[] hmacKeyBytes = new byte[plainText.remaining()];
         plainText.get(hmacKeyBytes);
-        byte[] digest = cryptoImpl.digest(hmacKeyBytes, encrypted.getContents());
+        byte[] encryptedContents = encrypted.getContents();
+        byte[] digest = cryptoImpl.digest(hmacKeyBytes, encryptedContents);
         if(!Arrays.equals(digest, encrypted.getHmac())) {
             throw new RuntimeException("HMAC integrity check failed"); //TODO custom exception type
         }
 
         // now use AES to finally decrypt the actual secret
-        byte[] decryptedBytes = cryptoImpl.decrypt(keyBytes, encrypted.getContents());
+        byte[] decryptedBytes = cryptoImpl.decrypt(keyBytes, encryptedContents);
         return new String(decryptedBytes);
     }
 
@@ -166,8 +304,7 @@ public class JCredStash {
      */
     public void putSecret(String tableName, String secretName, String secret, String kmsKeyId, Map<String, String> context) {
         String version = getHighestVersion(tableName, secretName);
-        if(version != null)
-        {
+        if(version != null) {
             int v = Integer.parseInt(version);
             version = padVersion(v + 1);
         }
@@ -182,15 +319,14 @@ public class JCredStash {
      * @param secret The secret value
      * @param kmsKeyId The KMS KeyId used to generate a new data key
      * @param context Encryption context for integrity check
-     * @param version An option version string to be used when stashing the secret, defaults to '1' (padded)
+     * @param version An optional version string to be used when stashing the secret, defaults to '1' (padded)
      *
      * @throws com.amazonaws.services.dynamodbv2.model.ConditionalCheckFailedException If the version already exists.
      */
     public void putSecret(String tableName, String secretName, String secret, String kmsKeyId, Map<String, String> context, String version) {
 
         String newVersion = version;
-        if(newVersion == null)
-        {
+        if(newVersion == null) {
             newVersion = padVersion(1);
         }
 
@@ -225,21 +361,7 @@ public class JCredStash {
                 .withExpressionAttributeNames(expressionAttributes));
     }
 
-    /**
-     * Get the highest version of a secret.
-     *
-     * @param tableName Credstash DynamoDB table name
-     * @param secretName Credstash secret name
-     * @return The highest version of the secret or null if no secret with that name exists
-     */
-    public String getHighestVersion(String tableName, String secretName)
-    {
-        StoredSecret storedSecret = readDynamoItem(tableName, secretName);
-        return storedSecret == null ? null : storedSecret.getVersion();
-    }
-
-    private String padVersion(int version)
-    {
+    private String padVersion(int version) {
         return String.format("%019d", version);
     }
 }
