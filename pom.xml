@@ -28,7 +28,7 @@
     </scm>
 
     <properties>
-        <aws.version>1.10.47</aws.version>
+        <aws.version>1.11.18</aws.version>
     </properties>
 
     <dependencies>
