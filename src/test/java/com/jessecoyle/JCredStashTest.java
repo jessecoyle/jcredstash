@@ -1,7 +1,9 @@
 package com.jessecoyle;
 
+import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
 import com.amazonaws.services.dynamodbv2.model.*;
+import com.amazonaws.services.kms.AWSKMS;
 import com.amazonaws.services.kms.AWSKMSClient;
 import com.amazonaws.services.kms.model.DecryptRequest;
 import com.amazonaws.services.kms.model.DecryptResult;
@@ -22,12 +24,12 @@ import java.util.Map;
 
 public class JCredStashTest {
 
-    private AmazonDynamoDBClient dynamoDBClient;
-    private AWSKMSClient awskmsClient;
+    private AmazonDynamoDB dynamoDBClient;
+    private AWSKMS awskmsClient;
 
     @Before
     public void setUp() {
-        dynamoDBClient = Mockito.mock(AmazonDynamoDBClient.class);
+        dynamoDBClient = Mockito.mock(AmazonDynamoDB.class);
 
         GenerateDataKeyResult generateDatakeyResult = new GenerateDataKeyResult();
         generateDatakeyResult.setCiphertextBlob(Mockito.mock(ByteBuffer.class));
@@ -37,7 +39,7 @@ public class JCredStashTest {
         decryptResult.setKeyId("alias/foo");
         decryptResult.setPlaintext(Mockito.mock(ByteBuffer.class));
 
-        awskmsClient = Mockito.mock(AWSKMSClient.class);
+        awskmsClient = Mockito.mock(AWSKMS.class);
         Mockito.when(awskmsClient.generateDataKey(Mockito.any(GenerateDataKeyRequest.class))).thenReturn(generateDatakeyResult);
         Mockito.when(awskmsClient.decrypt(Mockito.any(DecryptRequest.class))).thenReturn(decryptResult);
     }
